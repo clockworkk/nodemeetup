@@ -7,6 +7,7 @@
 var express    = require('express');        // call express
 var app        = express();                 // define our app using express
 var bodyParser = require('body-parser');
+var Promise 	= require('promise');
 var Parse = require('parse').Parse;
 var MeetupDataTable = Parse.Object.extend('meetup_users');
 var MeetupTable = Parse.Object.extend('meetup');
@@ -37,74 +38,43 @@ router.use(function(req, res, next) {
     next(); // make sure we go to the next routes and don't stop here
 });
 
+
 // test route to make sure everything is working (accessed at GET http://localhost:8080/api)
 router.get('/', function(req, res) {
-    res.json({ message: 'hooray! welcome to our api!' });   
+    res.json({ message: 'hooray! welcome to our api!' });
 });
+
 
 router.route('/home')
 	.post(function(req, res) {
 		// Get all of the events that the user has been invited to or has accepted invitation
 		var query = new Parse.Query(MeetupDataTable);
 		var username = req.body.username;
-		var attending_id = [];
-		var pending_id = [];
-		var pending = [];
-		var attending = [];
-		var message = '';
-		query.equalTo('user_id', username);
-		query.find({
-			success: function(results) {
-				// Do things with results
-				results.forEach(function(item) {
-					if (item['attributes']['attended']) {
-						// Query the meetup table for these meetups
-						var meetup_query = new Parse.Query(MeetupTable);
-						meetup_id = item['attributes']['meetup_id'];
-						meetup_query.equalTo('objectId', meetup_id);
-						query.find({
-							success: function(meetup_results) {
-								// Meetup results is what we want
-								// But for some reason at the very end its empty
-								attending = meetup_results;
-							},
-							error: function(meetup_error) {
-								console.log("There was an error: " + meetup_error);
-							}
-						});
-					}
-					else {
-						var meetup_query = new Parse.Query(MeetupTable);
-						meetup_id = item['attributes']['meetup_id'];
-						meetup_query.equalTo('objectId', meetup_id);
-						query.find({
-							success: function(meetup_results) {
-								// Meetup results is what we want
-								pending = meetup_results;
-							},
-							error: function(meetup_error) {
-								console.log("There was an error: " + meetup_error);
-							}
-						});						
-					}					
-				});
-				message = 'Success';
-			},
-			error: function(error) {
-				console.log("An error has occured: " + error); // debugging
-				message = "Failure"
-			}
+		var userEvents = [];
+
+		// Create a promise to avoid callback hell
+		var promise = new Promise(function(resolve, reject){
+			query.equalTo('user_id', username);
+			query.find({
+				success: function(results) {
+					resolve(results);
+				},
+				error: function(error) {
+					resolve(errors);
+				}
+			});
 		});
 
-		// Return the result
-		// When I set res data inside of the success functions its not coming out here
-		// But if you console log in the success functions there is data
-		res.json( { 
-			message : message,
-			attending: attending,
-			pending: pending
-		} );
+		// Use promise to get results
+		promise.then(function(results){
+			userEvents = results
+		}, function(err){
+			res.json({ message : err });
+		}).then(function(events){
+			res.json({ message: userEvents });
+		});
 	});
+
 
 router.route('/events')
 
@@ -114,8 +84,8 @@ router.route('/events')
     	//Invitees and Guests are arrays in Parse
     	var invitees = req.body.invitees;
     	var guests = [req.body.creator];
-    	if (invitees.indexOf(',') > -1) { 
-    		invitees = invitees.split(',') 
+    	if (invitees.indexOf(',') > -1) {
+    		invitees = invitees.split(',')
     	} else {
     		invitees = [req.body.invitees];
     	}
@@ -175,38 +145,69 @@ router.route('/events')
 		});
     })
 
-    // ToDo get working so we can get all of the events
     // Get all of the events
+    // Working
     .get(function(req,res) {
-    	var query = new Parse.Query(Parse.User);
-    	query.find({
-    		success: function(events) {
-    			for (var i = 0; i < events.length; ++i) {
-    				meet = events[i].get('name');
-    				console.log(meet)
-    			}
-    		}
-    	});
-    	res.json( {message : "Getting all of the events"} );
+    	var query = new Parse.Query(MeetupTable);
+
+    	// Create the promise
+    	var promise = new Promise(function(resolve, reject) {
+    		var result = [];
+	    	query.find({
+	    		success: function(events) {
+	    			for (var i = 0; i < events.length; ++i) {
+	    				meet = events[i].get('name');
+	    				result.push(meet);
+	    			}
+	    			resolve(result);
+	    		},
+	    		error: function(events, error) {
+	    			resolve(error);
+	    		}
+	    	});
+	    });
+
+	    // Use the promise
+	    promise.then(function(result) {
+	    	res.json({ message : result });
+	    }, function(err) {
+	    	res.json({ message : err });
+	    });
     });
 
-router.route('/users')
 
-	//ToDo figure out why I can't append the user to a ist and print it out
+// Fully Functional
+router.route('/users')
+	// Working
 	.get(function(req, res) {
 		var query = new Parse.Query(Parse.User);
-		query.find({
-  			success: function(users) {
-    			for (var i = 0; i < users.length; ++i) {
-    				user = users[i].get('username');
-    				console.log(user);
-    			}
-  			}
-		});
-		console.log(user);
-		res.json({message: user});
-	});
 
+		// Create a promise to avoid callback hell
+		var promise = new Promise(function(resolve, reject) {
+			// Store the results in an array.
+			var result = [];
+			query.find({
+	  			success: function(users) {
+	  				// Put the users into the array if successful
+	    			for (var i = 0; i < users.length; ++i) {
+	    				var user = users[i].get('username');
+	    				result.push(user);
+	    			}
+	    			 resolve(result);
+	  			},
+	  			error: function(users, error){
+	  				resolve(error);
+	  			}
+			});
+		});
+
+		// Use the promise to avoid callback hell
+		promise.then(function(result) {
+			res.json({message: result});
+		}, function(err){
+			res.json({message: err});
+		});
+	});
 
 
 // REGISTER OUR ROUTES -------------------------------
